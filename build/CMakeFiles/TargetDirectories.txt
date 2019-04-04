@@ -1,0 +1,4 @@
+/home/user/codes/calib_fisheye/build/CMakeFiles/rebuild_cache.dir
+/home/user/codes/calib_fisheye/build/CMakeFiles/edit_cache.dir
+/home/user/codes/calib_fisheye/build/CMakeFiles/main.dir
+/home/user/codes/calib_fisheye/build/CMakeFiles/ocam.dir
