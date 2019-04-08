@@ -11,6 +11,7 @@
 ------------------------------------------------------------------------------*/
 
 #include "fisheye_param.h"
+#include <iostream>
 
 const int slider_max = 5000;
 cv::Mat src, dst, dst_with_cylinder;
@@ -23,7 +24,7 @@ FisheyeParam ocam_model;
 int f_cylinder;
 cv::Mat cylinder;
 int cylinder_roi = 100;
-float theta1 = 60*CV_PI/180, theta2 = -60*CV_PI/180;
+float theta1 = 20*CV_PI/180, theta2 = -60*CV_PI/180;
 
 void create_perspecive_undistortion_LUT(const cv::Mat K, cv::Mat mapx, cv::Mat mapy, FisheyeParam& ocam_model)
 {
@@ -47,7 +48,7 @@ void create_perspecive_undistortion_LUT(const cv::Mat K, cv::Mat mapx, cv::Mat m
 void Fisheye2twoPerspective(cv::Mat src, cv::Mat dst, const cv::Mat& K, FisheyeParam& ocam_model)
 {
   cv::Size image_size = src.size();
-  float theta1 = 45*CV_PI/180.0, theta2 = -45*CV_PI/180.0;
+  float theta1 = 70*CV_PI/180.0, theta2 = -10*CV_PI/180.0;
   //std::cout << image_size.width << " " << image_size.height << std::endl;
   const float &fx = K.at<float>(0, 0), &fy = K.at<float>(1, 1);
   const float &xc = K.at<float>(0, 2), &yc = K.at<float>(1, 2);
@@ -58,25 +59,28 @@ void Fisheye2twoPerspective(cv::Mat src, cv::Mat dst, const cv::Mat& K, FisheyeP
       point2d.x = j;
       point2d.y = i;
       cv::Point3f point3d = ocam_model.Camera2World(point2d);
-      float x = point3d.x;//point3d.z;
-      float y = point3d.y;//point3d.z;
-      float z = point3d.z;//point3d.z;
+      float x = point3d.x;
+      float y = point3d.y;
+      float z = point3d.z;
       int u, v;
-      if(x <= 0)
+      if(x <= -tan((theta1+theta2)/2)*point3d.z)
       {
-
+        float alpha = (theta1-theta2)/2;
         point3d.x = z*sin(theta1) + x*cos(theta1);
         point3d.y = y; 
         point3d.z = z*cos(theta1) - x*sin(theta1);
-        u = point3d.x/point3d.z*fx + xc/2;
+        //u = point3d.x/point3d.z*fx + xc - fx*tan(theta1);
+        u = point3d.x/point3d.z*fx + xc - fx*tan(alpha);
         v = point3d.y/point3d.z*fy + yc;
       }
       else
       {
+        float alpha = -(theta1-theta2)/2;
         point3d.x = z*sin(theta2) + x*cos(theta2);
         point3d.y = y;
         point3d.z = z*cos(theta2) - x*sin(theta2);
-        u = point3d.x/point3d.z*fx + xc + xc/2;
+        //u = point3d.x/point3d.z*fx + xc - fx*tan(theta2);
+        u = point3d.x/point3d.z*fx + xc - fx*tan(alpha);
         v = point3d.y/point3d.z*fy + yc;
       }
       
@@ -95,38 +99,42 @@ void Fisheye2twoPerspective2(cv::Mat src, cv::Mat dst, float fx1, float fy1, flo
   }
 
   cv::Size image_size = dst.size();
-  float xc1 = xc/2 , yc1 = yc;
-  float xc2 = xc+xc/2, yc2 = yc;
+  //std::cout << image_size.width << std::endl;
+      
+  float xc1 = xc - fx1 * tan((theta1-theta2)/2), yc1 = yc;
+  float xc2 = xc - fx2 * tan(-(theta1-theta2)/2), yc2 = yc;
+  //float xc1 = xc - fx1 * tan(theta1), yc1 = yc;
+  //float xc2 = xc - fx2 * tan(theta2), yc2 = yc;
   
   for(int i = 0; i < image_size.height; i++)
     for(int j = 0; j < image_size.width; j++)
     {
       cv::Point3f point3d;
       float x, y, z;
-      if(j <= image_size.width/2)
+      if(j <= xc)
       {
         x = (j-xc1) / fx1;
         y = (i-yc1) / fy1;
         z = 1;
-        theta2 = theta2;
-        point3d.x = z*sin(theta2) + x*cos(theta2);
+        float theta = -theta1;
+        point3d.x = z*sin(theta) + x*cos(theta);
         point3d.y = y;
-        point3d.z = z*cos(theta2) - x*sin(theta2);
+        point3d.z = z*cos(theta) - x*sin(theta);
       }
       else
       {
         x = (j-xc2) / fx2;
         y = (i-yc2) / fy2;
         z = 1;
-        theta1 = theta1;
-        point3d.x = z*sin(theta1) + x*cos(theta1);
+        float theta = -theta2;
+        point3d.x = z*sin(theta) + x*cos(theta);
         point3d.y = y;
-        point3d.z = z*cos(theta1) - x*sin(theta1);
+        point3d.z = z*cos(theta) - x*sin(theta);
       }
       cv::Point2f point2d = ocam_model.World2Camera(point3d);
       int u = point2d.x, v = point2d.y;
       if(u >= 0 && u < src.cols && v >= 0 && v < src.rows)
-        dst.at<cv::Vec3b>(i, j) = src.at<cv::Vec3b>(v,u);
+        dst.at<cv::Vec3b>(i,j) = src.at<cv::Vec3b>(v,u);
     }
 }
 
