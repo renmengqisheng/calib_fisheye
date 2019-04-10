@@ -111,7 +111,7 @@ void Fisheye2twoPerspective2(cv::Mat src, cv::Mat dst, float fx1, float fy1, flo
     {
       cv::Point3f point3d;
       float x, y, z;
-      if(j <= xc)
+      if(j <= xc )
       {
         x = (j-xc1) / fx1;
         y = (i-yc1) / fy1;
