@@ -24,7 +24,7 @@ FisheyeParam ocam_model;
 int f_cylinder;
 cv::Mat cylinder;
 int cylinder_roi = 100;
-float theta1 = 20*CV_PI/180, theta2 = -60*CV_PI/180;
+float theta1 = -45*CV_PI/180, theta2 = 45*CV_PI/180;
 
 void create_perspecive_undistortion_LUT(const cv::Mat K, cv::Mat mapx, cv::Mat mapy, FisheyeParam& ocam_model)
 {
@@ -42,6 +42,64 @@ void create_perspecive_undistortion_LUT(const cv::Mat K, cv::Mat mapx, cv::Mat m
       cv::Point2f point2d = ocam_model.World2Camera(point3d);
       mapx.at<float>(i, j) = point2d.x;
       mapy.at<float>(i, j) = point2d.y;
+    }
+}
+
+void Fisheye2twoPerspective0(cv::Mat src, cv::Mat dst, const cv::Mat& K, FisheyeParam& ocam_model)
+{
+  cv::Size image_size = src.size();
+  float theta1 = -30*CV_PI/180.0, theta2 = 45*CV_PI/180.0;
+  //std::cout << image_size.width << " " << image_size.height << std::endl;
+  const float &fx = K.at<float>(0, 0), &fy = K.at<float>(1, 1);
+  const float &xc = K.at<float>(0, 2), &yc = K.at<float>(1, 2);
+
+  cv::Point3f center = ocam_model.Camera2World(cv::Point2f(xc, yc));
+  float x = center.x;
+  float y = center.y;
+  float z = center.z;
+  cv::Point3f center1, center2;
+  float theta = (theta2-theta1)/2;
+  center1.x = z*sin(-theta) + x*cos(-theta);
+  center1.y = y; 
+  center1.z = z*cos(-theta) - x*sin(-theta);
+  center2.x = z*sin(theta) + x*cos(theta);
+  center2.y = y; 
+  center2.z = z*cos(theta) - x*sin(theta);
+  float xc_1 = center1.x/center1.z*fx + xc;
+  float yc_1 = center1.y/center1.z*fy + yc;
+  float xc_2 = center2.x/center2.z*fx + xc;
+  float yc_2 = center2.y/center2.z*fy + yc;
+
+  for(int i = 0; i < image_size.height; i++)
+    for(int j = 0; j < image_size.width; j++)
+    {
+      cv::Point2f point2d;
+      point2d.x = j;
+      point2d.y = i;
+      cv::Point3f point3d = ocam_model.Camera2World(point2d);
+      float x = point3d.x;
+      float y = point3d.y;
+      float z = point3d.z;
+      int u, v;
+      if(x <= z * (tan(theta1+theta2)/2))
+      {
+        point3d.x = -z*sin(theta1) + x*cos(theta1);
+        point3d.y = y; 
+        point3d.z = z*cos(theta1) + x*sin(theta1);
+        u = point3d.x/point3d.z*fx + xc_1;//xc - fx*tan(theta1);
+        v = point3d.y/point3d.z*fy + yc_1;
+      }
+      else
+      {
+        point3d.x = -z*sin(theta2) + x*cos(theta2);
+        point3d.y = y;
+        point3d.z = z*cos(theta2) + x*sin(theta2);
+        u = point3d.x/point3d.z*fx + xc_2;//xc - fx*tan(theta2);
+        v = point3d.y/point3d.z*fy + yc_2;
+      }
+      
+      if(u >= 0 && u < dst.cols && v >= 0 && v < dst.rows)
+        dst.at<cv::Vec3b>(v, u) = src.at<cv::Vec3b>(i,j);
     }
 }
 
@@ -101,10 +159,10 @@ void Fisheye2twoPerspective2(cv::Mat src, cv::Mat dst, float fx1, float fy1, flo
   cv::Size image_size = dst.size();
   //std::cout << image_size.width << std::endl;
       
-  float xc1 = xc - fx1 * tan((theta1-theta2)/2), yc1 = yc;
-  float xc2 = xc - fx2 * tan(-(theta1-theta2)/2), yc2 = yc;
-  //float xc1 = xc - fx1 * tan(theta1), yc1 = yc;
-  //float xc2 = xc - fx2 * tan(theta2), yc2 = yc;
+  //float xc1 = xc - fx1 * tan((theta1-theta2)/2), yc1 = yc;
+  //float xc2 = xc - fx2 * tan(-(theta1-theta2)/2), yc2 = yc;
+  float xc1 = xc + fx1 * tan(theta1), yc1 = yc; //theta1 < 0  //找到左右针孔的主点
+  float xc2 = xc + fx2 * tan(theta2), yc2 = yc; //theta2 > 0
   
   for(int i = 0; i < image_size.height; i++)
     for(int j = 0; j < image_size.width; j++)
@@ -116,8 +174,8 @@ void Fisheye2twoPerspective2(cv::Mat src, cv::Mat dst, float fx1, float fy1, flo
         x = (j-xc1) / fx1;
         y = (i-yc1) / fy1;
         z = 1;
-        float theta = -theta1;
-        point3d.x = z*sin(theta) + x*cos(theta);
+        float theta = theta1;
+        point3d.x = z*sin(theta) + x*cos(theta);  //转回原相机坐标系
         point3d.y = y;
         point3d.z = z*cos(theta) - x*sin(theta);
       }
@@ -126,7 +184,7 @@ void Fisheye2twoPerspective2(cv::Mat src, cv::Mat dst, float fx1, float fy1, flo
         x = (j-xc2) / fx2;
         y = (i-yc2) / fy2;
         z = 1;
-        float theta = -theta2;
+        float theta = theta2;
         point3d.x = z*sin(theta) + x*cos(theta);
         point3d.y = y;
         point3d.z = z*cos(theta) - x*sin(theta);
@@ -137,7 +195,6 @@ void Fisheye2twoPerspective2(cv::Mat src, cv::Mat dst, float fx1, float fy1, flo
         dst.at<cv::Vec3b>(i,j) = src.at<cv::Vec3b>(v,u);
     }
 }
-
 
 void create_perspecive_undistortion_with_cylinder_LUT(const cv::Mat K, const int f, cv::Mat mapx, cv::Mat mapy, FisheyeParam& ocam_model)
 {
@@ -186,21 +243,21 @@ void Onchange(int, void*)
   K = (cv::Mat_<float>(3, 3) << fx,  0, xc,
                                  0, fy, yc,
                                  0,  0, 1);
-  create_perspecive_undistortion_LUT(K, mapx_persp, mapy_persp, ocam_model);
-  cv::remap(src, dst_with_cylinder, mapx_persp, mapy_persp, cv::INTER_LINEAR);
+  //create_perspecive_undistortion_LUT(K, mapx_persp, mapy_persp, ocam_model);
+  //cv::remap(src, dst_with_cylinder, mapx_persp, mapy_persp, cv::INTER_LINEAR);
   dst = cv::Mat(src.rows, src.cols, src.type(), cv::Scalar::all(0));
-  //Fisheye2twoPerspective(src, dst, K, ocam_model);
+  //Fisheye2twoPerspective0(src, dst, K, ocam_model);
   Fisheye2twoPerspective2(src, dst, fx, fy, fx, fy, theta1, theta2, ocam_model);
-  cylinder = cv::Mat::zeros(dst.rows, 2*f_cylinder*atan(0.5*dst.cols/f_cylinder), dst.type());
-  Undistrotion2Cylinder(dst, cylinder, f_cylinder);
+  //cylinder = cv::Mat::zeros(dst.rows, 2*f_cylinder*atan(0.5*dst.cols/f_cylinder), dst.type());
+  //Undistrotion2Cylinder(dst, cylinder, f_cylinder);
   //cylinder = cv::Mat::zeros(src.rows, 2*f_cylinder*atan(0.5*src.cols/f_cylinder), src.type());
   //Undistrotion2Cylinder(src, cylinder, f_cylinder);
   //create_perspecive_undistortion_with_cylinder_LUT(K, f_cylinder, mapx_with_cylinder, mapy_with_cylinder, ocam_model);
   //cv::remap(src, dst_with_cylinder, mapx_with_cylinder, mapy_with_cylinder, cv::INTER_LINEAR);
   
   cv::imshow( "Undistorted Perspective Image", dst );
-  cv::imshow( "Cylinder Image", cylinder );
-  cv::imshow( "With Cylinder Image", dst_with_cylinder );
+  //cv::imshow( "Cylinder Image", cylinder );
+  //cv::imshow( "With Cylinder Image", dst_with_cylinder );
 }
 
 int main(int argc, char *argv[])
@@ -215,11 +272,11 @@ int main(int argc, char *argv[])
   /* --------------------------------------------------------------------*/
   src = cv::imread("../frame_vc10_105.bmp");      // source image 1
   dst = cv::Mat(src.rows, src.cols, src.type(), cv::Scalar::all(0));    // undistorted panoramic image
-  dst_with_cylinder = cv::Mat(src.rows, src.cols, src.type(), cv::Scalar::all(0));
+  //dst_with_cylinder = cv::Mat(src.rows, src.cols, src.type(), cv::Scalar::all(0));
   //std::cout << src.type() << " " << CV_8UC3 << std::endl;
 
-  mapx_persp = cv::Mat(src.rows, src.cols, CV_32FC1);
-  mapy_persp = cv::Mat(src.rows, src.cols, CV_32FC1);
+  //mapx_persp = cv::Mat(src.rows, src.cols, CV_32FC1);
+  //mapy_persp = cv::Mat(src.rows, src.cols, CV_32FC1);
   //mapx_with_cylinder = cv::Mat(src.rows, src.cols, CV_32FC1);
   //mapy_with_cylinder = cv::Mat(src.rows, src.cols, CV_32FC1);
 
@@ -230,19 +287,19 @@ int main(int argc, char *argv[])
   /* Try to change SF to see how it affects the result                     */
   /* The undistortion is done on a  plane perpendicular to the camera axis */
   /* --------------------------------------------------------------------  */
-  fx = 480, fy = 360, xc = dst.cols/2.0, yc = 650;//dst.rows/2.0;
+  fx = 480, fy = 360, xc = dst.cols/2.0, yc = dst.rows/2.0;
   K = (cv::Mat_<float>(3, 3) << fx,  0, xc,
                                  0, fy, yc,
                                  0,  0, 1);
   //float sf = 500;
   //create_perspecive_undistortion_LUT(mapx_persp, mapy_persp, ocam_model, sf);
-  create_perspecive_undistortion_LUT(K, mapx_persp, mapy_persp, ocam_model);
-  cv::remap(src, dst_with_cylinder, mapx_persp, mapy_persp, cv::INTER_LINEAR);
+  //create_perspecive_undistortion_LUT(K, mapx_persp, mapy_persp, ocam_model);
+  //cv::remap(src, dst_with_cylinder, mapx_persp, mapy_persp, cv::INTER_LINEAR);
   //Fisheye2twoPerspective(src, dst, K, ocam_model);
   Fisheye2twoPerspective2(src, dst, fx, fy, fx, fy, theta1, theta2, ocam_model);
-  f_cylinder = 200;
-  cylinder = cv::Mat::zeros(dst.rows, 2*f_cylinder*atan(0.5*dst.cols/f_cylinder), dst.type());
-  Undistrotion2Cylinder(dst, cylinder, f_cylinder);
+  //f_cylinder = 200;
+  //cylinder = cv::Mat::zeros(dst.rows, 2*f_cylinder*atan(0.5*dst.cols/f_cylinder), dst.type());
+  //Undistrotion2Cylinder(dst, cylinder, f_cylinder);
   //cylinder = cv::Mat::zeros(src.rows, 2*f_cylinder*atan(0.5*src.cols/f_cylinder), src.type());
   //Undistrotion2Cylinder(src, cylinder, f_cylinder);
 
@@ -253,18 +310,18 @@ int main(int argc, char *argv[])
   cv::namedWindow( "Undistorted Perspective Image", 0 );
   cv::imshow( "Original fisheye camera image", src );
   cv::imshow( "Undistorted Perspective Image", dst );
-  cv::namedWindow( "Cylinder Image", 0 );
-  cv::imshow( "Cylinder Image", cylinder );
-  cv::namedWindow( "With Cylinder Image", 0 );
-  cv::imshow( "With Cylinder Image", dst_with_cylinder );
+  //cv::namedWindow( "Cylinder Image", 0 );
+  //cv::imshow( "Cylinder Image", cylinder );
+  //cv::namedWindow( "With Cylinder Image", 0 );
+  //cv::imshow( "With Cylinder Image", dst_with_cylinder );
 
 
   cv::createTrackbar("fx", "Undistorted Perspective Image", &fx, slider_max, Onchange);
   cv::createTrackbar("fy", "Undistorted Perspective Image", &fy, slider_max, Onchange);
   cv::createTrackbar("xc", "Undistorted Perspective Image", &xc, slider_max, Onchange);
   cv::createTrackbar("yc", "Undistorted Perspective Image", &yc, slider_max, Onchange);
-  cv::createTrackbar("f_cylinder", "Undistorted Perspective Image", &f_cylinder, slider_max, Onchange);
-  cv::createTrackbar("cylinder_roi", "Undistorted Perspective Image", &cylinder_roi, dst_with_cylinder.cols/2, Onchange);
+  //cv::createTrackbar("f_cylinder", "Undistorted Perspective Image", &f_cylinder, slider_max, Onchange);
+  //cv::createTrackbar("cylinder_roi", "Undistorted Perspective Image", &cylinder_roi, dst_with_cylinder.cols/2, Onchange);
 
   /* --------------------------------------------------------------------*/
   /* Wait until key 'q' pressed                                              */
